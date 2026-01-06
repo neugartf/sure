@@ -21,6 +21,9 @@ class Settings::HostingsController < ApplicationController
     # Show Yahoo Finance settings if either provider is set to yahoo_finance
     @show_yahoo_finance_settings = exchange_rate_provider == "yahoo_finance" || securities_provider == "yahoo_finance"
 
+    # Show Alpha Vantage settings if either provider is set to alpha_vantage
+    @show_alpha_vantage_settings = exchange_rate_provider == "alpha_vantage" || securities_provider == "alpha_vantage"
+
     # Only fetch provider data if we're showing the section
     if @show_twelve_data_settings
       twelve_data_provider = Provider::Registry.get_provider(:twelve_data)
@@ -29,6 +32,11 @@ class Settings::HostingsController < ApplicationController
 
     if @show_yahoo_finance_settings
       @yahoo_finance_provider = Provider::Registry.get_provider(:yahoo_finance)
+    end
+
+    if @show_alpha_vantage_settings
+      alpha_vantage_provider = Provider::Registry.get_provider(:alpha_vantage)
+      @alpha_vantage_usage = alpha_vantage_provider&.usage
     end
   end
 
@@ -48,6 +56,10 @@ class Settings::HostingsController < ApplicationController
 
     if hosting_params.key?(:twelve_data_api_key)
       Setting.twelve_data_api_key = hosting_params[:twelve_data_api_key]
+    end
+
+    if hosting_params.key?(:alpha_vantage_api_key)
+      Setting.alpha_vantage_api_key = hosting_params[:alpha_vantage_api_key]
     end
 
     if hosting_params.key?(:exchange_rate_provider)
@@ -99,7 +111,9 @@ class Settings::HostingsController < ApplicationController
 
   private
     def hosting_params
-      params.require(:setting).permit(:onboarding_state, :require_email_confirmation, :brand_fetch_client_id, :twelve_data_api_key, :openai_access_token, :openai_uri_base, :openai_model, :openai_json_mode, :exchange_rate_provider, :securities_provider)
+      params.require(:setting).permit(:onboarding_state, :require_email_confirmation, :brand_fetch_client_id, :twelve_data_api_key,:alpha_vantage_api_key, :openai_access_token,
+                                      :openai_uri_base,
+                                      :openai_model, :openai_json_mode, :exchange_rate_provider, :securities_provider)
     end
 
     def ensure_admin

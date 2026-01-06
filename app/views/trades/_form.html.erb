@@ -31,7 +31,8 @@
                             name_when_new: "entry[manual_ticker]",
                             label: t(".holding"),
                             placeholder: t(".ticker_placeholder"),
-                            required: true %>
+                            required: true,
+                            input_delay: 500 %>
           </div>
         <% else %>
           <%= form.text_field :manual_ticker, label: "Ticker symbol", placeholder: "AAPL", required: true %>

@@ -6,7 +6,9 @@ module Security::Provided
   class_methods do
     def provider
       provider = ENV["SECURITIES_PROVIDER"].presence || Setting.securities_provider
+      Rails.logger.warn("provider #{provider}")
       registry = Provider::Registry.for_concept(:securities)
+      Rails.logger.warn("registry #{registry}")
       registry.get_provider(provider.to_sym)
     end
 

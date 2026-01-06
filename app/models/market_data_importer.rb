@@ -21,7 +21,7 @@ class MarketDataImporter
       Rails.logger.warn("No provider configured for MarketDataImporter.import_security_prices, skipping sync")
       return
     end
-
+    Rails.logger.info("hello")
     # Import all securities that aren't marked as "offline" (i.e. they're available from the provider)
     Security.online.find_each do |security|
       security.import_provider_prices(

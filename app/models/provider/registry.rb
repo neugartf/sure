@@ -40,6 +40,14 @@ class Provider::Registry
         Provider::TwelveData.new(api_key)
       end
 
+      def alpha_vantage
+        api_key = "9AUTU09IX9BMZV8T"
+        Rails.logger.warn(api_key)
+        return nil unless api_key.present?
+
+        Provider::AlphaVantage.new(api_key)
+      end
+
       def plaid_us
         Provider::PlaidAdapter.ensure_configuration_loaded
         config = Rails.application.config.plaid
@@ -93,8 +101,10 @@ class Provider::Registry
   end
 
   def get_provider(name)
+    Rails.logger.warn("available provider #{available_providers}")
+    Rails.logger.warn("name  #{name}")
     provider_method = available_providers.find { |p| p == name.to_sym }
-
+    Rails.logger.warn(provider_method)
     raise Error.new("Provider '#{name}' not found for concept: #{concept}") unless provider_method.present?
 
     self.class.send(provider_method)
@@ -106,9 +116,9 @@ class Provider::Registry
     def available_providers
       case concept
       when :exchange_rates
-        %i[twelve_data yahoo_finance]
+        %i[twelve_data alpha_vantage yahoo_finance]
       when :securities
-        %i[twelve_data yahoo_finance]
+        %i[twelve_data alpha_vantage yahoo_finance]
       when :llm
         %i[openai]
       else

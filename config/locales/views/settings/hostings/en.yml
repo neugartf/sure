@@ -33,6 +33,7 @@ en:
         env_configured_message: Provider selection is disabled because environment variables (EXCHANGE_RATE_PROVIDER or SECURITIES_PROVIDER) are set. To enable selection here, remove these environment variables from your configuration.
         providers:
           twelve_data: Twelve Data
+          alpha_vantage: Alpha Vantage
           yahoo_finance: Yahoo Finance
       brand_fetch_settings:
         description: Enter the Client ID provided by Brand Fetch
@@ -70,6 +71,14 @@ en:
         placeholder: Enter your API key here
         plan: "%{plan} plan"
         title: Twelve Data
+      alpha_vantage_settings:
+        api_calls_used: "%{used} / %{limit} API daily calls used (%{percentage})"
+        description: Enter the API key provided by Alpha Vantage
+        env_configured_message: Successfully configured through the ALPHA_VANTAGE_API_KEY environment variable.
+        label: API Key
+        placeholder: Enter your API key here
+        plan: "%{plan} plan"
+        title: Alpha Vantage
       update:
         failure: Invalid setting value
         success: Settings updated

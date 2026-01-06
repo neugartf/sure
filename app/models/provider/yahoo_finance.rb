@@ -193,7 +193,7 @@ class Provider::YahooFinance < Provider
   def fetch_security_price(symbol:, exchange_operating_mic: nil, date:)
     with_provider_response do
       cache_key = "security_price_#{symbol}_#{exchange_operating_mic}_#{date}"
-      if cached_result = get_cached_result(cache_key)
+      if (cached_result = get_cached_result(cache_key))
         return cached_result
       end
 

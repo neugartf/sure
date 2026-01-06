@@ -15,6 +15,7 @@
       <%= form.select :exchange_rate_provider,
                       [
                         [t(".providers.twelve_data"), "twelve_data"],
+                        [t(".providers.alpha_vantage"), "alpha_vantage"],
                         [t(".providers.yahoo_finance"), "yahoo_finance"]
                       ],
                       { label: t(".exchange_rate_provider_label") },
@@ -27,7 +28,8 @@
       <%= form.select :securities_provider,
                       [
                         [t(".providers.twelve_data"), "twelve_data"],
-                        [t(".providers.yahoo_finance"), "yahoo_finance"]
+                        [t(".providers.alpha_vantage"), "alpha_vantage"],
+                        [t(".providers.yahoo_finance"), "yahoo_finance"],
                       ],
                       { label: t(".securities_provider_label") },
                       {

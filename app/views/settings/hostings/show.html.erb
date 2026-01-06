@@ -14,6 +14,9 @@
     <% if @show_twelve_data_settings %>
       <%= render "settings/hostings/twelve_data_settings" %>
     <% end %>
+    <% if @show_alpha_vantage_settings %>
+      <%= render "settings/hostings/alpha_vantage_settings" %>
+    <% end %>
   </div>
 <% end %>
 <%= settings_section title: t(".invites") do %>

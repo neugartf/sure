@@ -6,6 +6,7 @@ class Setting < RailsSettings::Base
 
   # Third-party API keys
   field :twelve_data_api_key, type: :string, default: ENV["TWELVE_DATA_API_KEY"]
+  field :alpha_vantage_api_key, type: :string, default: ENV["ALPHA_VANTAGE_API_KEY"]
   field :openai_access_token, type: :string, default: ENV["OPENAI_ACCESS_TOKEN"]
   field :openai_uri_base, type: :string, default: ENV["OPENAI_URI_BASE"]
   field :openai_model, type: :string, default: ENV["OPENAI_MODEL"]

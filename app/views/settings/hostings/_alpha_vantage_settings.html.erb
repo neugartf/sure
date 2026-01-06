@@ -1,0 +1,62 @@
+<div class="space-y-4">
+  <div>
+    <h2 class="font-medium mb-1"><%= t(".title") %></h2>
+    <% if ENV["ALPHA_VANTAGE_API_KEY"].present? %>
+      <p class="text-sm text-secondary"><%= t(".env_configured_message") %></p>
+    <% else %>
+      <div class="text-secondary text-sm mb-4">
+        <span><%= t(".description") %></span>
+        <details class="inline">
+          <summary class="cursor-pointer font-medium text-secondary underline inline"> (show details)</summary>
+          <ol class="text-sm text-secondary mt-2 list-decimal ml-6 space-y-2">
+            <li>
+              Claim your (free) API key <a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener noreferrer" class="underline">here</a>.
+            </li>
+            <li>
+              Paste the received <strong>Secret Key</strong> below.
+            </li>
+          </ol>
+        </details>
+      </div>
+    <% end %>
+  </div>
+
+  <%= styled_form_with model: Setting.new,
+                       url: settings_hosting_path,
+                       method: :patch,
+                       data: {
+                         controller: "auto-submit-form",
+                         "auto-submit-form-trigger-event-value": "blur"
+                       } do |form| %>
+    <%= form.text_field :alpha_vantage_api_key,
+                        label: t(".label"),
+                        type: "password",
+                        placeholder: t(".placeholder"),
+                        value: ENV.fetch("ALPHA_VANTAGE_API_KEY", Setting.alpha_vantage_api_key),
+                        disabled: ENV["ALPHA_VANTAGE_API_KEY"].present?,
+                        container_class: @alpha_vantage_usage.present? && !@alpha_vantage_usage.success? ? "border-red-500" : "",
+                        data: { "auto-submit-form-target": "auto" } %>
+  <% end %>
+
+  <% if @alpha_vantage_usage.present? && @alpha_vantage_usage.success? %>
+    <div class="space-y-4">
+      <div class="space-y-2">
+        <p class="text-sm text-secondary">
+          <%= t(".api_calls_used",
+                used: number_with_delimiter(@alpha_vantage_usage.data.used),
+                limit: number_with_delimiter(@alpha_vantage_usage.data.limit),
+                percentage: number_to_percentage(@alpha_vantage_usage.data.utilization, precision: 1)) %>
+        </p>
+        <div class="w-52 h-1.5 bg-gray-100 rounded-2xl">
+          <div class="h-full bg-green-500 rounded-2xl"
+               style="width: <%= [@alpha_vantage_usage.data.utilization, 2].max %>%;"></div>
+        </div>
+      </div>
+      <div class="bg-gray-100 rounded-md px-1.5 py-0.5 w-fit">
+        <p class="text-xs font-medium text-secondary uppercase">
+          <%= t(".plan", plan: @alpha_vantage_usage.data.plan) %>
+        </p>
+      </div>
+    </div>
+  <% end %>
+</div>
