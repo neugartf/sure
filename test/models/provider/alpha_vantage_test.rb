@@ -109,7 +109,7 @@ class Provider::AlphaVantageTest < ActiveSupport::TestCase
 
     response = @provider.search_securities("IBM")
 
-    assert response.success?
+    assert response.success?, "Expected success but got error: #{response.error.inspect}"
     securities = response.data
     assert_equal 1, securities.length
     assert_equal "IBM", securities.first.symbol

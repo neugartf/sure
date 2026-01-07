@@ -6,6 +6,31 @@ class Provider::AlphaVantage < Provider
   InvalidExchangeRateError = Class.new(Error)
   InvalidSecurityPriceError = Class.new(Error)
 
+  # API Functions
+  FUNC_CURRENCY_EXCHANGE_RATE = "CURRENCY_EXCHANGE_RATE".freeze
+  FUNC_FX_DAILY = "FX_DAILY".freeze
+  FUNC_SYMBOL_SEARCH = "SYMBOL_SEARCH".freeze
+  FUNC_OVERVIEW = "OVERVIEW".freeze
+  FUNC_TIME_SERIES_DAILY = "TIME_SERIES_DAILY".freeze
+
+  # Response Keys
+  KEY_REALTIME_RATE = "Realtime Currency Exchange Rate".freeze
+  KEY_ERROR_MESSAGE = "Error Message".freeze
+  KEY_NOTE = "Note".freeze
+  KEY_TIME_SERIES_FX = "Time Series FX (Daily)".freeze
+  KEY_TIME_SERIES_DAILY = "Time Series (Daily)".freeze
+  KEY_BEST_MATCHES = "bestMatches".freeze
+  KEY_CLOSE = "4. close".freeze
+  KEY_REGION = "4. region".freeze
+  KEY_SYMBOL = "1. symbol".freeze
+  KEY_NAME = "2. name".freeze
+  KEY_TYPE = "3. type".freeze
+  KEY_CURRENCY = "8. currency".freeze
+  KEY_OVERVIEW_NAME = "Name".freeze
+  KEY_OVERVIEW_DESCRIPTION = "Description".freeze
+  KEY_OVERVIEW_ASSET_TYPE = "AssetType".freeze
+  KEY_OVERVIEW_CURRENCY = "Currency".freeze
+
   def initialize(api_key)
     @api_key = api_key
   end
@@ -13,16 +38,16 @@ class Provider::AlphaVantage < Provider
   def healthy?
     with_provider_response do
       Rails.logger.info("AlphaVantage: Checking health...")
-      response = client.get("/query") do |req|
-        req.params["function"] = "CURRENCY_EXCHANGE_RATE"
-        req.params["from_currency"] = "USD"
-        req.params["to_currency"] = "EUR"
+      begin
+        parsed = request_api(
+          function: FUNC_CURRENCY_EXCHANGE_RATE,
+          from_currency: "USD",
+          to_currency: "EUR"
+        )
+        parsed.key?(KEY_REALTIME_RATE)
+      rescue Error
+        false
       end
-
-      parsed = JSON.parse(response.body)
-      is_healthy = parsed.key?("Realtime Currency Exchange Rate") && !parsed.key?("Error Message")
-      Rails.logger.info("AlphaVantage: Health check result: #{is_healthy}")
-      is_healthy
     end
   end
 
@@ -53,35 +78,23 @@ class Provider::AlphaVantage < Provider
         Rails.logger.warn("AlphaVantage: start_date (#{start_date}) is older than 100 days. 'compact' output may not contain required data.")
       end
 
-      sleep(1.1) # Get around 1 req/s limitations
       Rails.logger.info("AlphaVantage: Fetching daily FX for #{from}/#{to} from #{start_date} to #{end_date} (compact)")
-      response = client.get("/query") do |req|
-        req.params["function"] = "FX_DAILY"
-        req.params["from_symbol"] = from
-        req.params["to_symbol"] = to
-        req.params["outputsize"] = "compact"
-      end
 
-      parsed = JSON.parse(response.body)
+      parsed = request_api(
+        function: FUNC_FX_DAILY,
+        from_symbol: from,
+        to_symbol: to,
+        outputsize: "compact"
+      )
 
-      if parsed["Error Message"]
-        Rails.logger.error("AlphaVantage: API Error - #{parsed['Error Message']}")
-        raise InvalidExchangeRateError, "API error: #{parsed['Error Message']}"
-      end
-
-      data = parsed["Time Series FX (Daily)"]
-
-      if data.nil?
-        message = parsed["Note"] || "No data returned"
-        Rails.logger.warn("AlphaVantage: No data or rate limited - #{message}")
-        raise InvalidExchangeRateError, "API error: #{message}"
-      end
+      data = parsed[KEY_TIME_SERIES_FX]
+      ensure_data_exists!(data, parsed, InvalidExchangeRateError)
 
       results = data.map do |date_str, values|
         date = Date.parse(date_str)
         next unless date >= start_date && date <= end_date
 
-        rate = values["4. close"]
+        rate = values[KEY_CLOSE]
         if rate.nil? || rate.to_f <= 0
           Rails.logger.warn("AlphaVantage: Invalid rate data for #{from}/#{to} on #{date}: #{rate.inspect}")
           next
@@ -103,28 +116,20 @@ class Provider::AlphaVantage < Provider
     with_provider_response do
       parsed = fetch_symbol_search_raw(symbol)
 
-      if parsed["Error Message"]
-        Rails.logger.error("AlphaVantage: Search Error - #{parsed['Error Message']}")
-        raise Error, "API error: #{parsed['Error Message']}"
-      end
-
-      data = parsed["bestMatches"]
-
-      if data.nil?
-        message = parsed["Note"] || "No data returned"
-        Rails.logger.warn("AlphaVantage: Search yielded no data - #{message}")
-        raise Error, "API error: #{message}"
-      end
+      data = parsed[KEY_BEST_MATCHES]
+      Rails.logger.info("AlphaVantage: Found matches #{data}")
+      ensure_data_exists!(data, parsed, Error, "Search yielded no data")
 
       results = data.map do |security|
-        country = ISO3166::Country.find_country_by_any_name(security["4. region"])
-
+        Rails.logger.info("AlphaVantage: Found security #{security}")
+        country_code = RegionMapper.to_iso_code(security[KEY_REGION])
+        Rails.logger.info("AlphaVantage: Found country #{country_code} for '#{symbol}'")
         Security.new(
-          symbol: security["1. symbol"],
-          name: security["2. name"],
+          symbol: security[KEY_SYMBOL],
+          name: security[KEY_NAME],
           logo_url: nil,
           exchange_operating_mic: nil,
-          country_code: country ? country.alpha2 : nil
+          country_code: country_code
         )
       end
 
@@ -141,39 +146,31 @@ class Provider::AlphaVantage < Provider
         Rails.logger.info("AlphaVantage: No overview profile found for #{symbol}, trying SYMBOL_SEARCH fallback")
         search_data = fetch_symbol_search_raw(symbol)
 
-        if search_data["Error Message"]
-          Rails.logger.error("AlphaVantage: Search Error (Fallback) - #{search_data['Error Message']}")
-          raise Error, "API error: #{search_data['Error Message']}"
-        end
-
-        matches = search_data["bestMatches"]
-        match = matches&.find { |m| m["1. symbol"] == symbol } || matches&.first
+        matches = search_data[KEY_BEST_MATCHES]
+        match = matches&.find { |m| m[KEY_SYMBOL] == symbol } || matches&.first
 
         if match
           SecurityInfo.new(
-            symbol: match["1. symbol"],
-            name: match["2. name"],
+            symbol: match[KEY_SYMBOL],
+            name: match[KEY_NAME],
             links: nil,
             logo_url: nil,
             description: nil,
-            kind: match["3. type"],
+            kind: match[KEY_TYPE],
             exchange_operating_mic: exchange_operating_mic
           )
         else
           Rails.logger.warn("AlphaVantage: No profile data found for #{symbol} (and fallback failed)")
           raise Error, "No profile data found for symbol #{symbol}"
         end
-      elsif profile["Error Message"]
-        Rails.logger.error("AlphaVantage: Info Error - #{profile['Error Message']}")
-        raise Error, "API error: #{profile['Error Message']}"
       else
         SecurityInfo.new(
           symbol: symbol,
-          name: profile["Name"],
+          name: profile[KEY_OVERVIEW_NAME],
           links: nil,
           logo_url: nil,
-          description: profile["Description"],
-          kind: profile["AssetType"],
+          description: profile[KEY_OVERVIEW_DESCRIPTION],
+          kind: profile[KEY_OVERVIEW_ASSET_TYPE],
           exchange_operating_mic: exchange_operating_mic
         )
       end
@@ -203,99 +200,96 @@ class Provider::AlphaVantage < Provider
 
   def fetch_security_prices(symbol:, exchange_operating_mic: nil, start_date:, end_date:)
     with_provider_response do
-      # Fetch currency from overview
-      profile = fetch_overview_raw(symbol)
-      Rails.logger.info("AlphaVantage: profile (#{profile}")
+    # Fetch currency from overview
+    profile = fetch_overview_raw(symbol)
+    Rails.logger.info("AlphaVantage: profile (#{profile}")
 
-      if profile.empty?
-        Rails.logger.info("AlphaVantage: No overview profile found for #{symbol}, trying SYMBOL_SEARCH fallback")
-        search_data = fetch_symbol_search_raw(symbol)
+    if profile.empty?
+      Rails.logger.info("AlphaVantage: No overview profile found for #{symbol}, trying SYMBOL_SEARCH fallback")
+      search_data = fetch_symbol_search_raw(symbol)
 
-        if search_data["Error Message"]
-          Rails.logger.error("AlphaVantage: Search Error (Fallback) - #{search_data['Error Message']}")
-          raise Error, "API error: #{search_data['Error Message']}"
-        end
-
-        matches = search_data["bestMatches"]
-        match = matches&.find { |m| m["1. symbol"] == symbol } || matches&.first
-        currency = match["8. currency"]
-      else
-        currency = profile["Currency"]
-      end
-
-      if start_date < 100.days.ago.to_date
-        Rails.logger.warn("AlphaVantage: start_date (#{start_date}) for #{symbol} is older than 100 days. 'compact' output may not contain required data.")
-      end
-
-      sleep(1.1) # Get around 1 req/s limitations
-      Rails.logger.info("AlphaVantage: Fetching daily time series for #{symbol} from #{start_date} to #{end_date} (compact)")
-      response = client.get("/query") do |req|
-        req.params["function"] = "TIME_SERIES_DAILY"
-        req.params["symbol"] = symbol
-        req.params["outputsize"] = "compact"
-      end
-
-      parsed = JSON.parse(response.body)
-
-      if parsed["Error Message"]
-        Rails.logger.error("AlphaVantage: Time Series Error - #{parsed['Error Message']}")
-        raise InvalidSecurityPriceError, "API error: #{parsed['Error Message']}"
-      end
-
-      values = parsed["Time Series (Daily)"]
-
-      if values.nil?
-        message = parsed["Note"] || "No data returned"
-        Rails.logger.warn("AlphaVantage: No time series data - #{message}")
-        raise InvalidSecurityPriceError, "API error: #{message}"
-      end
-
-      results = values.map do |date_str, resp|
-        date = Date.parse(date_str)
-        next unless date >= start_date && date <= end_date
-
-        price = resp["4. close"]
-        if price.nil? || price.to_f <= 0
-          Rails.logger.warn("AlphaVantage: Invalid price data for #{symbol} on #{date}: #{price.inspect}")
-          next
-        end
-
-        Price.new(
-          symbol: symbol,
-          date: date,
-          price: price.to_f,
-          currency: currency,
-          exchange_operating_mic: exchange_operating_mic
-        )
-      end.compact
-
-      Rails.logger.info("AlphaVantage: Successfully fetched #{results.length} price points for #{symbol}")
-      results
+      matches = search_data[KEY_BEST_MATCHES]
+      match = matches&.find { |m| m[KEY_SYMBOL] == symbol } || matches&.first
+      currency = match[KEY_CURRENCY]
+    else
+      currency = profile[KEY_OVERVIEW_CURRENCY]
     end
+    if start_date < 100.days.ago.to_date
+      Rails.logger.warn("AlphaVantage: start_date (#{start_date}) for #{symbol} is older than 100 days. 'compact' output may not contain required data.")
+    end
+
+    Rails.logger.info("AlphaVantage: Fetching daily time series for #{symbol} from #{start_date} to #{end_date} (compact)")
+
+    parsed = request_api(
+      function: FUNC_TIME_SERIES_DAILY,
+      symbol: symbol,
+      outputsize: "compact"
+    )
+
+    values = parsed[KEY_TIME_SERIES_DAILY]
+    ensure_data_exists!(values, parsed, InvalidSecurityPriceError, "No time series data")
+
+    results = values.map do |date_str, resp|
+      date = Date.parse(date_str)
+      next unless date >= start_date && date <= end_date
+
+      price = resp[KEY_CLOSE]
+      if price.nil? || price.to_f <= 0
+        Rails.logger.warn("AlphaVantage: Invalid price data for #{symbol} on #{date}: #{price.inspect}")
+        next
+      end
+
+      Price.new(
+        symbol: symbol,
+        date: date,
+        price: price.to_f,
+        currency: currency,
+        exchange_operating_mic: exchange_operating_mic
+      )
+    end.compact
+
+    Rails.logger.info("AlphaVantage: Successfully fetched #{results.length} price points for #{symbol}")
+    results
   end
+end
+
   private
     attr_reader :api_key
 
     def fetch_overview_raw(symbol)
-      sleep(1.1) # Get around 1 req/s limitations
       Rails.logger.info("AlphaVantage: Fetching security info (overview) for #{symbol}")
-      response = client.get("/query") do |req|
-        req.params["function"] = "OVERVIEW"
-        req.params["symbol"] = symbol
-      end
-
-      JSON.parse(response.body)
+      request_api(function: FUNC_OVERVIEW, symbol: symbol)
     end
 
     def fetch_symbol_search_raw(symbol)
-      sleep(1.1) # Get around 1 req/s limitations
       Rails.logger.info("AlphaVantage: Searching securities for keywords: #{symbol}")
+      request_api(function: FUNC_SYMBOL_SEARCH, keywords: symbol)
+    end
+
+    def request_api(function:, **params)
+      sleep(1.1) # Get around 1 req/s limitations
+
       response = client.get("/query") do |req|
-        req.params["function"] = "SYMBOL_SEARCH"
-        req.params["keywords"] = symbol
+        req.params["function"] = function
+        params.each { |k, v| req.params[k.to_s] = v }
       end
 
-      JSON.parse(response.body)
+      parsed = JSON.parse(response.body)
+
+      if parsed[KEY_ERROR_MESSAGE]
+        Rails.logger.error("AlphaVantage: API Error - #{parsed[KEY_ERROR_MESSAGE]}")
+        raise Error, "API error: #{parsed[KEY_ERROR_MESSAGE]}"
+      end
+
+      parsed
+    end
+
+    def ensure_data_exists!(data, parsed, error_class = Error, default_message = "No data returned")
+      if data.nil?
+        message = parsed[KEY_NOTE] || default_message
+        Rails.logger.warn("AlphaVantage: #{default_message} - #{message}")
+        raise error_class, "API error: #{message}"
+      end
     end
 
     def base_url
@@ -328,3 +322,5 @@ class Provider::AlphaVantage < Provider
       end
     end
 end
+
+
