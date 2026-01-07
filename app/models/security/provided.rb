@@ -55,6 +55,7 @@ module Security::Provided
     return nil unless response.success? # Provider error
 
     price = response.data
+    Rails.logger.info("price: #{price}")
     Security::Price.find_or_create_by!(
       security_id: self.id,
       date: price.date,

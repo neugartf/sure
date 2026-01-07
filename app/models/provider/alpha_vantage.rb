@@ -192,7 +192,7 @@ class Provider::AlphaVantage < Provider
           raise InvalidSecurityPriceError, "No prices found for security #{symbol} on date #{date}"
         end
         price = prices.first
-        Rails.logger.info("AlphaVantage: Found price: #{price.price}")
+        Rails.logger.info("AlphaVantage: Found price: #{price}")
         price
       else
         Rails.logger.error("AlphaVantage: Failed to fetch single price: #{historical_data_response.error}")
@@ -206,7 +206,22 @@ class Provider::AlphaVantage < Provider
       # Fetch currency from overview
       profile = fetch_overview_raw(symbol)
       Rails.logger.info("AlphaVantage: profile (#{profile}")
-      currency = profile["Currency"]
+
+      if profile.empty?
+        Rails.logger.info("AlphaVantage: No overview profile found for #{symbol}, trying SYMBOL_SEARCH fallback")
+        search_data = fetch_symbol_search_raw(symbol)
+
+        if search_data["Error Message"]
+          Rails.logger.error("AlphaVantage: Search Error (Fallback) - #{search_data['Error Message']}")
+          raise Error, "API error: #{search_data['Error Message']}"
+        end
+
+        matches = search_data["bestMatches"]
+        match = matches&.find { |m| m["1. symbol"] == symbol } || matches&.first
+        currency = match["8. currency"]
+      else
+        currency = profile["Currency"]
+      end
 
       if start_date < 100.days.ago.to_date
         Rails.logger.warn("AlphaVantage: start_date (#{start_date}) for #{symbol} is older than 100 days. 'compact' output may not contain required data.")
@@ -291,11 +306,10 @@ class Provider::AlphaVantage < Provider
       @client ||= Faraday.new(url: base_url) do |faraday|
         # Retry must be first (outermost) to catch errors from inner middlewares
         faraday.request(:retry, {
-          max: 5, # Increased from 2 to handle rate limits better
+          max: 2,
           interval: 1.1, # Increased to > 1s to respect "1 request per second"
           interval_randomness: 0.5,
-          backoff_factor: 2,
-          exceptions: [ Faraday::ConnectionFailed, Faraday::TimeoutError ]
+          backoff_factor: 2
         })
 
         faraday.request :json
